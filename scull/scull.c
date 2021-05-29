@@ -305,6 +305,7 @@ static int __init scull_init(void){
 	return 0;
 fail:
 
+	printk(KERN_ALERT "Scull: failed to init\n");
 	scull_cleanup();
 	return result;
 }
@@ -326,6 +327,7 @@ void scull_cleanup(void){
 		for(i=0;i<scull_nr_devs;i++){
 			scull_trim(scull_devices +i);
 			cdev_del(&scull_devices[i].cdev);
+			printk(KERN_INFO "Scull: removed dev:%d\n",i);
 		}
 
 		kfree(scull_devices);
