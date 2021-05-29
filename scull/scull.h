@@ -23,6 +23,7 @@ extern int scull_nr_devs;
 
 extern int scull_quantum;
 extern int scull_qset;
+extern struct scull_dev * scull_devices;
 
 
 struct scull_dev{
@@ -61,9 +62,11 @@ ssize_t scull_write(struct file *,
 		const char __user *,
 		size_t,
 		loff_t *);
+struct scull_qset * scull_follow(struct scull_dev *, int);
 
 
 int scull_trim(struct scull_dev *);
-void cleanup(void);
+
+void scull_cleanup(void);
 
 #endif
