@@ -10,12 +10,16 @@
 #include<linux/cdev.h>//cdev
 #include<linux/kernel.h>
 #include<linux/slab.h>//kfree+kmalloc
+#include<linux/mutex.h>//replaces semaphores
 
 #define SCULL_MAJOR 	0
 #define SCULL_MINOR 	0
 #define SCULL_NR_DEVS 	4
 #define SCULL_QUANTUM 	4000
 #define SCULL_QSET 	1000
+
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_DESCRIPTION("example scull device driver");
 
 extern int scull_major;
 extern int scull_minor;
@@ -32,8 +36,9 @@ struct scull_dev{
 	int qset;
 	unsigned long size;
 	unsigned int access_key;
-	struct semaphore sem;
+	struct mutex mu;
 	struct cdev cdev;
+	int is_read;
 };
 
 struct scull_qset{
@@ -42,8 +47,8 @@ struct scull_qset{
 };
 
 
-static int __init scull_init(void);
-static void __exit scull_exit(void);
+int __init scull_init(void);
+void __exit scull_exit(void);
 
 static void  scull_setup_dev(struct scull_dev * dev,
 		int index);

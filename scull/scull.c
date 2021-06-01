@@ -1,7 +1,5 @@
 #include"scull.h"
 
-MODULE_LICENSE("Dual BSD/GPL");
-MODULE_DESCRIPTION("example scull device driver");
 
 dev_t dev;
 struct scull_dev * scull_devices;
@@ -47,9 +45,14 @@ static void scull_setup_dev(struct scull_dev *dev,
 }
 
 int scull_open(struct inode *inode, struct file *filp){
+
 	struct scull_dev *dev;
-	
+
 	dev = container_of(inode->i_cdev,struct scull_dev,cdev);
+
+	int minor = MINOR(dev->cdev.dev);
+	printk(KERN_NOTICE "scull: open device scull%d\n",minor);
+
 	filp->private_data=dev;
 
 	if( (filp->f_flags & O_ACCMODE) == O_WRONLY){
@@ -63,8 +66,13 @@ ssize_t scull_read(struct file * filp,
 		char __user * buff, 
 		size_t count, loff_t * f_pos){
 
+
 	struct scull_dev *dev = filp->private_data;
 	struct scull_qset *dptr;
+
+	int minor = MINOR(dev->cdev.dev);
+	printk(KERN_NOTICE "scull: read device scull%d\n",minor);
+
 
 	int quantum = dev->quantum;
 	int qset = dev->qset;
@@ -73,10 +81,32 @@ ssize_t scull_read(struct file * filp,
 	int item, s_pos, q_pos, rest;
 	ssize_t retval = 0;
 
-	if(down_interruptible(&dev->sem)){
+	//if(down_interruptible(&dev->sem)){
+	//	printk(KERN_NOTICE "scull: read device scull%d cannot get lock\n",minor);
+	//	return -ERESTARTSYS;
+	//}
+	if(mutex_lock_interruptible(&dev->mu)){
+		printk(KERN_ERR "scull: read device scull%d cannot get lock\n",minor);
 		return -ERESTARTSYS;
 	}
+
+//	if(dev->is_read){
+//		retval=0;
+//		goto test;
+//	}
+//	char * bf = kmalloc(sizeof(char*)*4,GFP_KERNEL);
+//
+//	memset(bf,'q',4);
+//	if(copy_to_user(buff,'qqqq',4)){
+//		dev->is_read=1;
+//		retval=4;
+//		goto test;
+//	}
+//
+//	kfree(bf);
+
 	if(*f_pos >= dev->size){
+		printk(KERN_ALERT "scull: position outside bounds, scull%d\n",minor);
 		goto out;
 	}
 	//read only to the end of the device
@@ -108,11 +138,17 @@ ssize_t scull_read(struct file * filp,
 
 	 *f_pos +=count;
 	 retval = count;
+test:
 
+	printk(KERN_NOTICE "scull: finsihed reading from device scull%d\n",minor);
+	 mutex_unlock(&dev->mu);
+	return retval;
 
 out:
+	printk(KERN_ERR "scull:failed to read device scull%d\n",minor);
 
-	up(&dev->sem);
+	//up(&dev->sem);
+	 mutex_unlock(&dev->mu);
 	return retval;
 }
 
@@ -123,6 +159,9 @@ ssize_t scull_write(struct file * filp,
 	struct scull_dev *dev= filp->private_data;
 	struct scull_qset * dptr;
 
+	int minor = MINOR(dev->cdev.dev);
+	printk(KERN_NOTICE "scull: writting to device scull%d\n",minor);
+
 	int quantum = dev->quantum;
 	int qset = dev->qset;
 
@@ -130,7 +169,13 @@ ssize_t scull_write(struct file * filp,
 	int item, s_pos, q_pos,rest;
 	ssize_t retval = -ENOMEM;
 
-	if(down_interruptible(&dev->sem)){
+//	if(down_interruptible(&dev->sem)){
+//		printk(KERN_NOTICE "scull: write device scull%d locked\n",minor);
+//		return -ERESTARTSYS;
+//	}
+
+	if(mutex_lock_interruptible(&dev->mu)){
+		printk(KERN_ERR "scull: write device scull%d locked\n",minor);
 		return -ERESTARTSYS;
 	}
 
@@ -141,10 +186,16 @@ ssize_t scull_write(struct file * filp,
 	s_pos = rest / quantum;
 	q_pos = rest % quantum;
 
-	//follow dev to the currect position
+	//retval=count;
+	//goto test;
+
+	//follow dev to the correct position
 	dptr = scull_follow(dev,item);
 	
 	if(dptr==NULL){
+		printk(KERN_ERR 
+			"scull: failed to write device scull%d\n",
+			minor);
 		goto out;
 	}
 	if(!dptr->data){
@@ -153,6 +204,9 @@ ssize_t scull_write(struct file * filp,
 				GFP_KERNEL);
 		if(!dptr->data){
 			//fail -> no mem
+			printk(KERN_ERR 
+			"scull: failed to write device scull%d, NOMEM\n",
+			minor);
 			goto out;
 		}
 
@@ -183,22 +237,34 @@ ssize_t scull_write(struct file * filp,
 		dev->size = *f_pos;
 	}
 
-
+test:
 	
+	printk(KERN_NOTICE "scull: finished writting device scull%d\n",minor);
+	mutex_unlock(&dev->mu);
+	return retval;
 
 out:
-	up(&dev->sem);
+	//up(&dev->sem);
+	printk(KERN_ERR "scull: failed writting device scull%d\n",minor);
+	mutex_unlock(&dev->mu);
 	return retval;
 }
 struct scull_qset * scull_follow(struct scull_dev *dev, int n){
+
 	struct scull_qset *qs = dev->data;
+
+	int minor;
+	minor = MINOR(dev->cdev.dev);
+
 	if(!qs){
-		dev->data = kmalloc(sizeof(struct scull_qset),
+		qs = dev->data = kmalloc(sizeof(struct scull_qset),
 				GFP_KERNEL);
-		qs = dev->data;
 		if(qs == NULL){
+			printk(KERN_ERR "scull%d: failed allocate quantum.\n",minor);
 			return NULL;
 		}
+
+		//zero it
 		memset(qs,0,sizeof(struct scull_qset));
 	}
 
@@ -211,6 +277,7 @@ struct scull_qset * scull_follow(struct scull_dev *dev, int n){
 			if(qs->next == NULL){
 				return NULL;
 			}
+			//zero
 			memset(qs->next,
 				0,
 				sizeof(struct scull_qset));
@@ -254,7 +321,7 @@ int scull_trim(struct scull_dev * dev){
 	return 0;
 }
 
-static int __init scull_init(void){
+int __init scull_init(void){
 
 	printk(KERN_INFO "Init scull\n");
 
@@ -298,8 +365,9 @@ static int __init scull_init(void){
 	for(i=0;i<scull_nr_devs;i++){
 		scull_devices[i].quantum = scull_quantum;
 		scull_devices[i].qset = scull_qset;
+		scull_devices[i].is_read = 0;
+		mutex_init(&scull_devices[i].mu);
 		scull_setup_dev(&scull_devices[i],i);
-
 	}
 
 	return 0;
@@ -312,7 +380,7 @@ fail:
 
 
 
-static void __exit scull_exit(void){
+void __exit scull_exit(void){
 
 	scull_cleanup();
 
