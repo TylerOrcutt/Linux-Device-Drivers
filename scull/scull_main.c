@@ -1,4 +1,5 @@
 #include"scull.h"
+#include "scull_proc.h"
 
 
 dev_t dev;
@@ -51,6 +52,7 @@ int scull_open(struct inode *inode, struct file *filp){
 	dev = container_of(inode->i_cdev,struct scull_dev,cdev);
 
 	int minor = MINOR(dev->cdev.dev);
+
 	printk(KERN_NOTICE "scull: open device scull%d\n",minor);
 
 	filp->private_data=dev;
@@ -90,20 +92,6 @@ ssize_t scull_read(struct file * filp,
 		return -ERESTARTSYS;
 	}
 
-//	if(dev->is_read){
-//		retval=0;
-//		goto test;
-//	}
-//	char * bf = kmalloc(sizeof(char*)*4,GFP_KERNEL);
-//
-//	memset(bf,'q',4);
-//	if(copy_to_user(buff,'qqqq',4)){
-//		dev->is_read=1;
-//		retval=4;
-//		goto test;
-//	}
-//
-//	kfree(bf);
 
 	if(*f_pos >= dev->size){
 		printk(KERN_ALERT "scull: position outside bounds, scull%d\n",minor);
@@ -138,7 +126,6 @@ ssize_t scull_read(struct file * filp,
 
 	 *f_pos +=count;
 	 retval = count;
-test:
 
 	printk(KERN_NOTICE "scull: finsihed reading from device scull%d\n",minor);
 	 mutex_unlock(&dev->mu);
@@ -185,9 +172,6 @@ ssize_t scull_write(struct file * filp,
 
 	s_pos = rest / quantum;
 	q_pos = rest % quantum;
-
-	//retval=count;
-	//goto test;
 
 	//follow dev to the correct position
 	dptr = scull_follow(dev,item);
@@ -237,8 +221,6 @@ ssize_t scull_write(struct file * filp,
 		dev->size = *f_pos;
 	}
 
-test:
-	
 	printk(KERN_NOTICE "scull: finished writting device scull%d\n",minor);
 	mutex_unlock(&dev->mu);
 	return retval;
@@ -249,6 +231,7 @@ out:
 	mutex_unlock(&dev->mu);
 	return retval;
 }
+
 struct scull_qset * scull_follow(struct scull_dev *dev, int n){
 
 	struct scull_qset *qs = dev->data;
@@ -325,7 +308,7 @@ int __init scull_init(void){
 
 	printk(KERN_INFO "Init scull\n");
 
-	int result;
+	int result=0;
 
 	if(scull_major>0){
 
@@ -370,6 +353,12 @@ int __init scull_init(void){
 		scull_setup_dev(&scull_devices[i],i);
 	}
 
+
+
+	//start proc file
+	if(!init_scull_proc()){
+	}
+
 	return 0;
 fail:
 
@@ -389,6 +378,10 @@ void __exit scull_exit(void){
 }
 
 void scull_cleanup(void){
+
+	//remove proc entry
+	remove_scull_proc();
+	
 
 	if(scull_devices){
 		int i;
