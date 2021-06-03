@@ -47,6 +47,7 @@ static int scull_proc_open(struct inode *inode, struct file *fops){
 
 	return 0;
 }
+static bool is_read=0;
 
 static ssize_t  scull_proc_read(
 			struct file* fi,
@@ -55,7 +56,11 @@ static ssize_t  scull_proc_read(
 			loff_t * pos){
 
 	int len=0;
-	len = sprintf(buf,"Hello world");
+	if(!is_read){
+		len = sprintf(buf,"Hello world\n");
+	}
+	is_read=!is_read;
+	
 	return len;
 
 }
