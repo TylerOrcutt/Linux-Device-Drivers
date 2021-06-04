@@ -23,6 +23,9 @@ chgrp $group /dev/${device}[0-3]
 chmod $mode /dev/${device}[0-3]
 
 
+#load test data
+dd if=test.txt of=/dev/scull0
+
 
 
 

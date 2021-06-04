@@ -24,6 +24,9 @@ struct file_operations scull_fops = {
 	.write	 = scull_write
 };
 
+static void  scull_setup_dev(struct scull_dev * dev,
+		int index);
+
 static void scull_setup_dev(struct scull_dev *dev,
 			int index){
 
@@ -48,10 +51,11 @@ static void scull_setup_dev(struct scull_dev *dev,
 int scull_open(struct inode *inode, struct file *filp){
 
 	struct scull_dev *dev;
+	int minor;
 
 	dev = container_of(inode->i_cdev,struct scull_dev,cdev);
+	 minor = MINOR(dev->cdev.dev);
 
-	int minor = MINOR(dev->cdev.dev);
 
 	printk(KERN_NOTICE "scull: open device scull%d\n",minor);
 
@@ -73,7 +77,6 @@ ssize_t scull_read(struct file * filp,
 	struct scull_qset *dptr;
 
 	int minor = MINOR(dev->cdev.dev);
-	printk(KERN_NOTICE "scull: read device scull%d\n",minor);
 
 
 	int quantum = dev->quantum;
@@ -83,6 +86,8 @@ ssize_t scull_read(struct file * filp,
 	int item, s_pos, q_pos, rest;
 	ssize_t retval = 0;
 
+	printk(KERN_NOTICE "scull: read device scull%d\n",minor);
+	
 	//if(down_interruptible(&dev->sem)){
 	//	printk(KERN_NOTICE "scull: read device scull%d cannot get lock\n",minor);
 	//	return -ERESTARTSYS;
@@ -147,7 +152,6 @@ ssize_t scull_write(struct file * filp,
 	struct scull_qset * dptr;
 
 	int minor = MINOR(dev->cdev.dev);
-	printk(KERN_NOTICE "scull: writting to device scull%d\n",minor);
 
 	int quantum = dev->quantum;
 	int qset = dev->qset;
@@ -156,6 +160,9 @@ ssize_t scull_write(struct file * filp,
 	int item, s_pos, q_pos,rest;
 	ssize_t retval = -ENOMEM;
 
+
+	printk(KERN_NOTICE "scull: writting to device scull%d\n",minor);
+	
 //	if(down_interruptible(&dev->sem)){
 //		printk(KERN_NOTICE "scull: write device scull%d locked\n",minor);
 //		return -ERESTARTSYS;
@@ -283,16 +290,20 @@ int scull_trim(struct scull_dev * dev){
 	int qset = dev->qset;
 	int i;
 
+	printk(KERN_INFO "Scull:freeing dev\n");
+
 	for(dptr=dev->data;dptr;dptr=nxt){
 
 		if(dptr->data){
 			for(i=0;i<qset;i++){
 				kfree(dptr->data[i]);
 			}
+			kfree(dptr->data);
+			dptr->data=NULL;
 		}
+		nxt = dptr->next;
+		kfree(dptr);
 
-		kfree(dptr->data);
-		dptr->data=NULL;
 
 	}
 
@@ -306,9 +317,11 @@ int scull_trim(struct scull_dev * dev){
 
 int __init scull_init(void){
 
-	printk(KERN_INFO "Init scull\n");
 
 	int result=0;
+	int i;
+
+	printk(KERN_INFO "Init scull\n");
 
 	if(scull_major>0){
 
@@ -344,7 +357,6 @@ int __init scull_init(void){
 			scull_nr_devs*sizeof(struct scull_dev));
 
 
-	int i;
 	for(i=0;i<scull_nr_devs;i++){
 		scull_devices[i].quantum = scull_quantum;
 		scull_devices[i].qset = scull_qset;
@@ -382,13 +394,20 @@ void scull_cleanup(void){
 	//remove proc entry
 	remove_scull_proc();
 	
+	printk(KERN_INFO "Scull: Removing scull devices\n");
 
 	if(scull_devices){
 		int i;
 		for(i=0;i<scull_nr_devs;i++){
-			scull_trim(scull_devices +i);
+			if(mutex_lock_interruptible(&scull_devices[i].mu)){
+			printk(KERN_ERR "Scull: failed to remove dev:%d\n",
+					i);
+				continue;
+			}
+			scull_trim(&scull_devices[i]);
 			cdev_del(&scull_devices[i].cdev);
 			printk(KERN_INFO "Scull: removed dev:%d\n",i);
+			mutex_unlock(&scull_devices[i].mu);
 		}
 
 		kfree(scull_devices);

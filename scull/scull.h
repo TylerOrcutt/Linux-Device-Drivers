@@ -50,10 +50,6 @@ struct scull_qset{
 int __init scull_init(void);
 void __exit scull_exit(void);
 
-static void  scull_setup_dev(struct scull_dev * dev,
-		int index);
-
-
 int scull_open(struct inode *inode, struct file *filp);
 int scull_release(struct inode *,struct file*);
 
